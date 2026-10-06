@@ -11,9 +11,9 @@
 |------|-------|--------|------------|
 | 1.1.1 | How JS runs: parsing, creation/execution, hoisting | Notes Generated | 01-01-the-execution-model-part1.md |
 | 1.1.2 | var vs let vs const, TDZ | Notes Generated | 01-01-the-execution-model-part1.md |
-| 1.1.3 | Call stack, stack trace, stack overflow | In Progress | - |
-| 1.1.4 | Lexical scope and scope chain | Not Started | - |
-| 1.1.5 | Closures: what's retained, loop puzzle, real uses | Not Started | - |
+| 1.1.3 | Call stack, stack trace, stack overflow | Notes Generated | 01-01-the-execution-model-part1.md |
+| 1.1.4 | Lexical scope and scope chain | In Progress | 01-01-the-execution-model-part1.md |
+| 1.1.5 | Closures: what's retained, loop puzzle, real uses | In Progress | 01-01-the-execution-model-part1.md |
 | 1.1.6 | Closures and memory leaks | Not Started | - |
 | 1.1.7 | IIFEs and module pattern | Not Started | - |
 
