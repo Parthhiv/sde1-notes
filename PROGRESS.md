@@ -13,9 +13,9 @@
 | 1.1.2 | var vs let vs const, TDZ | Notes Generated | 01-01-the-execution-model-part1.md |
 | 1.1.3 | Call stack, stack trace, stack overflow | Notes Generated | 01-01-the-execution-model-part1.md |
 | 1.1.4 | Lexical scope and scope chain | In Progress | 01-01-the-execution-model-part1.md |
-| 1.1.5 | Closures: what's retained, loop puzzle, real uses | In Progress | 01-01-the-execution-model-part1.md |
-| 1.1.6 | Closures and memory leaks | Not Started | - |
-| 1.1.7 | IIFEs and module pattern | Not Started | - |
+| 1.1.5 | Closures: what's retained, loop puzzle, real uses | In Progress | 01-01-the-execution-model-part2.md |
+| 1.1.6 | Closures and memory leaks | In Progress | 01-01-the-execution-model-part2.md |
+| 1.1.7 | IIFEs and module pattern | In Progress | 01-01-the-execution-model-part2.md |
 
 ### Unit 1.2 — Types and Coercion
 | Atom | Topic | Status | Notes File |

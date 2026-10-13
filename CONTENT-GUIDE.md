@@ -95,6 +95,18 @@ One file per unit. Filename format:
 ```
 Example: `01-01-the-execution-model.md`
 
+**Units with more than ~4 atoms get split across `{name}-part1.md` / `{name}-part2.md`,** so no single file exceeds ~1200 lines. These notes are revised under time pressure before interviews — a file you can't skim is a file you won't revise. Keep each part under 4 atoms, and put a "Next: {next file}" pointer at the bottom of each.
+
+### Keep It Lean
+
+When writing an atom, prefer removing duplication over removing substance:
+
+- **Don't re-teach.** If an example appears in two atoms, keep it in the one that owns the concept and link to it.
+- **Don't preview later units.** A 20-line intro to callbacks inside a scoping atom is 20 lines the async unit will write properly. Forward-reference instead.
+- **One diagram per idea.** ASCII art is the most expensive thing in these files. One clear diagram beats three elaborate ones.
+- **Prediction exercises must add something.** If a quiz re-runs an example already shown verbatim, delete it.
+- **Gotchas: 4–6 per atom.** Past that they stop being gotchas and start being trivia.
+
 ### Required Sections (in order)
 
 ```markdown
