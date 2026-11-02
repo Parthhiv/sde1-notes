@@ -20,10 +20,10 @@
 ### Unit 1.2 — Types and Coercion
 | Atom | Topic | Status | Notes File |
 |------|-------|--------|------------|
-| 1.2.1 | 7 primitives + object, typeof lies | Not Started | - |
-| 1.2.2 | Value vs reference semantics | Not Started | - |
-| 1.2.3 | Abstract vs strict equality | Not Started | - |
-| 1.2.4 | Truthy/falsy values | Not Started | - |
+| 1.2.1 | 7 primitives + object, typeof lies | Notes Generated | 01-02-types-and-coercion-part1.md |
+| 1.2.2 | Value vs reference semantics | Notes Generated | 01-02-types-and-coercion-part1.md |
+| 1.2.3 | Abstract vs strict equality | Notes Generated | 01-02-types-and-coercion-part1.md |
+| 1.2.4 | Truthy/falsy values | Notes Generated | 01-02-types-and-coercion-part1.md |
 | 1.2.5 | null vs undefined, ?? vs || | Not Started | - |
 | 1.2.6 | NaN, Object.is, floating-point, BigInt | Not Started | - |
 | 1.2.7 | Shallow vs deep copy | Not Started | - |

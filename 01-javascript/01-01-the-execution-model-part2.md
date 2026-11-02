@@ -1005,3 +1005,54 @@ The first four demonstrate closures. The last two make the first four *measurabl
 Unit 1.1 is closed. You have the execution model end to end: hoisting and TDZ, the call stack, lexical scope, closures and what they retain, why retention becomes a leak, and what module scope is (and why IIFEs existed to fake it).
 
 Unit 1.2 moves from *when things run* to *what things are*. It starts with Atom 1.2.1 — the 7 primitives plus object, and `typeof`'s famous lies (`typeof null === "object"`, `typeof function === "function"`). That atom is also the on-ramp to Atom 1.2.2, value vs reference semantics, which is where "why did my React prop change?" comes from.
+
+---
+
+## Interview Speak — The Three Answers in Simple Words
+
+> How to actually *say* it in an interview. Order matters: lexical scope first (the foundation), then closure, then binding.
+
+### Lexical scope
+
+> "Lexical scope means a function's scope is decided by **where it's written** in the code, not where it's called. When the engine reads my file, it fixes which variables each function can see, and never rebuilds that list at runtime. When a function uses a variable, it looks outward — inner scope first, then the scope it was nested in, and so on up to global. First match wins — that's shadowing. If nothing matches, it's a ReferenceError."
+
+**One-liner:** *A function carries its birthplace, not its current address.*
+
+### Closure
+
+> "A closure is a function **plus a live reference to the scope it was born in**. Even after the outer function returns, the inner function can still read and write those variables. It's not a snapshot — it's a key to the room where the variable still lives. So if a factory creates `let count = 0` and two inner functions, one can increment and the other can read — they share the same live variable."
+
+**Proof to quote:** if a closure captured a *value*, `greeter.change("Yo")` would have no effect on `say()` — but it does, so closures share variables (Atom 1.1.5).
+
+### Binding
+
+> "A binding is just a **name connected to a variable** — like `let count = 0` creates a binding between the name `count` and that variable. `let`/`const` create a binding per block or per loop iteration; `var` creates only one binding for the whole function. This matters for closures: a closure captures the *binding* — a live link to the variable itself — **not a copy of its value**."
+
+**Proof to quote:** the `var` loop prints `3,3,3` vs `let` printing `0,1,2` — same capture, different number of bindings.
+
+### Answer order when asked
+
+1. **Lexical scope first** (scope is fixed at write time)
+2. **Then closure** (the function keeps that birth scope alive after the outer call ends)
+3. **Then binding** (it captures the *variable*, not the value)
+
+If they go deeper: real uses (private state via `createCounter`, `once`, `memoize`) and the stale `useEffect` closure in React.
+
+---
+
+## Quick Revision — Imp Questions
+
+> Answer each out loud, no notes. If you hesitate, the atom is in parentheses.
+
+1. A function is called from a totally different place in the file. What can it see? — *(1.1.4: only what it could see where it was written — call site changes nothing)*
+2. What does a closure capture — the value or the variable? How do you prove it? — *(1.1.5: the binding/live link; two returned functions seeing each other's writes is the proof)*
+3. Why does `for (var i...)` + `setTimeout` print `3,3,3`, and what exactly does `let` change? — *(1.1.2/1.1.5: one binding shared vs one fresh binding per iteration — count the rooms)*
+4. Does `await` inside the `var` loop fix it? — *(1.1.2: no — it changes when code runs, not what is scoped)*
+5. What stays in memory when a closure is created? — *(1.1.5/1.1.6: its whole scope, though engines may keep only the used bindings — assume the worst)*
+6. Do closures cause memory leaks? — *(1.1.6: not inherently — only when a long-lived root holds a path into the retained scope; a cycle with no root collects fine)*
+7. "It's a circular reference" — what do you tell a colleague who says that's the leak? — *(1.1.6: tracing GC collects unreachable cycles; the only question is what roots the graph — follow the retainers)*
+8. Walk me through how JavaScript resolves a variable name. — *(1.1.4: chain built at parse time from textual nesting; walk outward rung by rung; nearest match wins = shadowing; bottom with no match = ReferenceError)*
+9. Why does the empty-deps `useEffect` log a stale value forever? — *(1.1.5: the callback was written during the first render, so its room holds first-render state; two fixes — list the dep, or use the updater form)*
+10. `console.log(x)` before `var x = 5` vs before `let x = 5` — why the different errors? — *(1.1.1: `var` hoisted AND initialised as `undefined`; `let` hoisted but in TDZ → ReferenceError)*
+11. Is `const` immutable? — *(1.1.2: no — it locks the binding, not the value; `arr.push(4)` works, `arr = []` throws)*
+12. When would you still write an IIFE today? — *(1.1.7: async IIFE in non-module files, loop scoping without `let`, reading bundler/UMD output)*
