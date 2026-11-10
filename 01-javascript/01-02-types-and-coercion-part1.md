@@ -164,121 +164,333 @@ setUser({ ...user, score: 999 });         // fresh object
 
 ### Atom 1.2.3 — Abstract vs strict equality
 
-**Mental model of this atom:** *`===` compares tags; `==` converts then compares those.* `===` reads nothing but the type tags — types differ, `false` instantly, no conversion. `==` behaves exactly like `===` when tags match, and when they don't, converts both operands toward a shared shape using a fixed spec algorithm:
+#### The Problem
 
-| `==` case | rule |
-|---|---|
-| `null == undefined` | `true` — spec-defined special pair, nothing else converts to either |
-| `null == 0 / "0" / false` | `false` — null's only ==-partner is `undefined` |
-| `NaN == anything` (even NaN) | `false` — NaN refuses every comparison |
-| `number == string` | string → number, then number vs number |
-| `boolean == anything` | boolean → number FIRST (`true` → 1), then continue |
-| `number/bigint == object` | object → primitive via `ToPrimitive` (`valueOf`, then `toString`) |
-
-**The famous `[] == false`, walked step by step:**
+You know the rule "use `===`". But code you *didn't write* uses `==` — legacy code, code with `x == null` (which you must NOT "fix" to `x === null`), and a bug that shows up in your own `===` code anyway. The scenario where lack of this atom actually hurts:
 
 ```js
-[] == false;
-// Step 1: boolean present → convert to number first: false → 0 → [] == 0
-// Step 2: array (object) vs number → ToPrimitive: valueOf([]) is itself, so toString → ""
-//         → "" == 0
-// Step 3: number == string → string → number: "" → 0 → 0 == 0
-// → true
+// API returns: { "expiry": 0 } when the token has expired, number
+if (expiry === 0) { refresh(); }
+// Bug: some APIs return expiry as the STRING "0"
+typeof expiry; // "string"
+expiry === 0;  // false — never refreshes. Token silently expires.
 ```
 
-And the apparent contradiction it causes: `!![]` is `true` (truthiness — all objects are truthy) while `[] == false` is `true` (coercive equality — different algorithm). **Truthiness ≠ Equality.**
+And the reverse failure — an interviewer asks you to *evaluate* `[] == false`, `"" == 0`, `"true" == true` where guessing is impossible. If you can't run the algorithm in your head, `==` stays black magic forever.
 
-**Why `"true" == true` is false — the boolean-first trap:**
+#### The Mental Model
+
+> Think of `===` as a **strict customs officer**: it reads the type tag on each passport and if they don't match, it says no *without even opening the bag*. `==` is a **cooperative translator**: it only starts translating when the two passports differ, and it translates by fixed spec rules — *string becomes number, boolean becomes number first, object becomes a primitive string*. After translation, it compares like `===` would. So every `==` comparison you can't solve instantly is just a small chain of translations away from a `===` you can.
+
+**One-liner:** *`===` compares tags; `==` translates until the tags match, then compares.*
+
+#### The Explanation — a solver's checklist you can run mechanically
+# JavaScript `==` — Solver's Checklist with Examples
+
+Evaluate ANY `==` expression using these steps, in order. Stop as soon as one applies.
+
+## STEP 1 — Same types on both sides?
+
+Both values have the same data type (number, string, boolean, etc.).
+
+- **YES:** Compare exactly like `===`. No conversion happens.
+- **NO:** Go to Step 2.
+
+Examples:
+
+```javascript
+5 == 5       // true  (number == number)
+"5" == "5"   // true  (string == string)
+"5" == 5     // Different types → go to Step 2
+```
+
+## STEP 2 — Is either side `null` or `undefined`?
+
+- **YES:** True ONLY if the other side is also `null` or `undefined`.
+- `null` pairs with `undefined` — with NOTHING else (not `0`, not `""`, not `false`).
+- **NO:** Go to Step 3.
+
+Examples:
+
+```javascript
+null == undefined  // true
+null == null       // true
+undefined == undefined // true
+
+null == 0          // false
+null == ""         // false
+null == false      // false
+```
+
+## STEP 3 — Is either side a boolean?
+
+- **YES:** Convert the boolean into a number:
+  - `true` → `1`
+  - `false` → `0`
+- RESTART from Step 1.
+- **NO:** Go to Step 4.
+
+Examples:
+
+```javascript
+true == 1       // true  (true → 1)
+false == 0      // true  (false → 0)
+true == "1"     // true  (true → 1, then "1" → 1)
+false == ""     // true  (false → 0, "" → 0)
+true == "hello" // false (true → 1, "hello" → NaN)
+```
+
+## STEP 4 — Is one side a number and the other a string?
+
+- **YES:** Convert the STRING into a number.
+- RESTART from Step 1.
+- **NO:** Go to Step 5.
+
+Examples:
+
+```javascript
+5 == "5"       // true  ("5" → 5)
+10 == "10"     // true  ("10" → 10)
+0 == ""        // true  ("" → 0)
+0 == "hello"   // false ("hello" → NaN)
+5 == "05"      // true  ("05" → 5)
+```
+
+## STEP 5 — Is either side an object? (Arrays are objects too!)
+
+- **YES:** Convert the object into a primitive value.
+  - First, try `valueOf()`.
+  - If that doesn't return a primitive, try `toString()`.
+  - An array's `toString()` behaves like `.join(",")`.
+    - `[]` → `""`
+    - `[1,2]` → `"1,2"`
+- RESTART from Step 1.
+- **NO:** Go to Step 6.
+
+Examples:
+
+```javascript
+[] == ""          // true  ([] → "")
+[] == 0           // true  ([] → "" → 0)
+[5] == 5          // true  ([5] → "5" → 5)
+[1,2] == "1,2"    // true  ([1,2] → "1,2")
+[1,2] == 12       // false ("1,2" → NaN)
+{} == "[object Object]" // true (object → "[object Object]")
+```
+
+## STEP 6 — No rule applies?
+
+- You have reached the end of the applicable cases.
+- The comparison is false for the remaining primitive type combinations.
+
+Example:
+
+```javascript
+Symbol() == 5  // false
+```
+
+---
+
+## Quick Revision Table
+
+| Expression | Result | Why? |
+|---|---|---|
+| `5 == "5"` | `true` | String → number |
+| `true == 1` | `true` | Boolean → number |
+| `false == ""` | `true` | Boolean → 0, string → 0 |
+| `null == 0` | `false` | Null only matches null/undefined |
+| `[] == 0` | `true` | Array → "" → 0 |
+| `[5] == 5` | `true` | Array → "5" → 5 |
+| `[1,2] == 12` | `false` | "1,2" → NaN |
+
+## Final Takeaway
+
+**Remember:** `==` doesn't blindly convert everything into the same type.
+
+It follows a specific order of rules. Whenever a conversion happens, RESTART the comparison from Step 1.
+
+**Bonus:** Prefer `===` in everyday JavaScript because it avoids implicit type conversion and makes comparisons more predictable.
+
+**Drills — run the checklist yourself, then check:**
 
 ```js
-"true" == true;
-// true → 1 first (boolean→number), then string→number: "true" → NaN
-// NaN == 1 → false
+"" == 0;        // STEP 1 no, STEP 2 no, STEP 3 no, STEP 4: ""→0, START: 0 == 0 → true
+"1" == true;    // STEP 3: true→1. RESTART. STEP 4: "1"→1. → 1 == 1 → true
+"2" == true;    // STEP 3: true→1. STEP 4: "2"→2. → 2 == 1 → false!!
+[1,2] == "1,2"; // STEP 5: [1,2].toString() = "1,2" → STEP 1: same string tag → true
+[null] == 0;    // STEP 5: [null].toString() = "" → STEP 4: ""→0 → true
+NaN == NaN;     // STEP 1: same tag (both number)... but NaN REFUSES all equality by definition → false
+null == 0;      // STEP 2 fires: false — null pairs with undefined only
+null == undefined; // STEP 2 fires: true
+"true" == true; // STEP 3: true→1. STEP 4: "true"→NaN. → NaN == 1 → false (the classic trap)
 ```
 
-The fix: keep tags equal, never negotiate.
+Notice `NaN`: the checklist would reach "same tags, compare like ===" — but NaN is the one value the equality *rules* say no to, always. (Why: Atom 1.2.6 — IEEE 754 says an "invalid number" cannot equal anything, and JS chose to inherit that rule.)
+
+**The debugging side — when an equality comparison fails in production, classify the symptom:**
+
+| Symptom | Usually the cause | The debug move |
+|---|---|---|
+| Comparison silently never true | Type mismatch you didn't notice — `"0" === 0`, `"null"` vs `null` | `console.log(typeof a, typeof b)` FIRST, always |
+| `==` gave a **surprising true** | A string got converted (`"" == 0`, `"\n" == 0`, `[] == false`) | Re-run the checklist step by step by hand |
+| `==` gave a **surprising false** | Boolean on one side (`"true" == true` → false) or NaN | Same — checklist shows the boolean→number step |
+| Object comparison fails | Address comparison — different objects (Atom 1.2.2) | Don't compare identity; compare a field like `a.id === b.id` |
+
+**The fix playbook — three real-world patterns:**
 
 ```js
-const isActive = String(confirmValue).toLowerCase() === "true";
+// BUG PATTERN 1 — type mismatch from the outside world (the expiry "0" bug)
+// Fix: convert at the boundary, once, then === forever
+const expiryNum = Number(apiResponse.expiry);      // one place, deliberate
+if (expiryNum === 0) refresh();
+
+// BUG PATTERN 2 — "missing" vs "falsy" confusion
+// Fix: name what you mean. One idiomatic == exists:
+if (input == null) { ... }   // exactly "input is null OR undefined", nothing else
+// never false for 0 / "" / NaN — it compares ONLY against null and undefined
+
+// BUG PATTERN 3 — you wrote == null, and later someone "fixed" it to === null
+// Fix: keep the ==, add a comment that names the intent:
+// `input == null` — DELIBERATE: covers undefined (missing key) AND null (explicit empty)
 ```
 
-**The one idiomatic `==`:**
+And the special-case quiz that wrecks people — **relational operators are a DIFFERENT algorithm** (numbers only, no special null case):
 
 ```js
-if (value == null) { // "no value" — true for null AND undefined, nothing else
-  return "no value";
-}
-// never accidentally catches 0, "", NaN — see Atom 1.2.4's if (count) bug
+null == 0;   // false (checklist step 2: null pairs with undefined only)
+null >= 0;   // true!  relational: both sides → numbers → null becomes 0 → 0 >= 0
+null > 0;    // false → 0 > 0
 ```
 
-**The most-brainbreaking fact — relational operators use a *different* algorithm:**
+**Checklist recap to recite:** *same tags → ===; null/undefined pair only with each other; boolean → number first, restart; number-vs-string → string becomes number; object → primitive, restart.*
 
-```js
-null == 0;   // false — == treats null as a special value
-null >= 0;   // true!  — relational ops convert both sides to number: null → 0
-null > 0;    // false
-```
+#### The Gotchas
 
-Interview phrasing: *"Relational operators run a number-only algorithm, so null → 0 → 0 >= 0 is true. Coercive equality treats null as a unique value that only pairs with undefined. Two algorithms, one value."*
+- **Boolean converts FIRST, before anything else** — this single fact explains `"1" == true` (true) AND `"true" == true` (false). Both start with true → 1.
+- **NaN is unfixable by conversion** — `Number("blah") → NaN` and then *every comparison against it fails*, including `NaN == NaN`. If a numeric comparison mysteriously never fires, check for a NaN feed: `Number.isNaN(x)`.
+- **`null == 0` is false but `null >= 0` is true** — two different algorithms. `==` has a special null-pairing rule; `>=` coerces null to 0. Writing tests for exactly this triple is worth an afternoon, once.
+- **`[] == ""` is true, `[] == []` is false** — first one went through the checklist (STEP 5 → `.toString()` is `""`, then number comparison with 0); second one is plain address comparison from Atom 1.2.2. Objects equal only themselves.
+- **Don't rewrite legacy `x == null` into `x === null`** — the original deliberately accepts undefined too; your "fix" changes behavior and silently breaks tests that pass `undefined`.
+
+#### Interview-Shaped Questions
+
+1. **"What does `==` actually do vs `===`?"**
+   *"`===` compares type tags and rejects mismatches with zero conversion. `==` compare same-tag values identically, and when tags differ it runs a fixed translation ladder: null/undefined pair only with each other, boolean becomes a number FIRST, string becomes a number, object becomes a primitive, re-running the ladder after each step."*
+
+2. **"Walk me through `[] == false` — out loud, with steps."**
+   Boolean first: false → 0. Array → primitive: `[].toString() = ""`. String → number: `"" → 0`. Result: `0 == 0` → true. Say the steps explicitly — that's what they're actually testing.
+
+3. **"Why is `null >= 0` true but `null == 0` false?"**
+   Relational operators coerce both sides to numbers — null becomes 0. Coercive equality treats null as a unique value that pairs only with undefined. Two algorithms, one value.
+
+4. **"When would you still WRITE `==`?"**
+   Only deliberately, for the null idiom: `x == null` catches both null and undefined as "no value here" — nothing else gets caught accidentally. It's the one `==` use senior codebases accept, usually with a comment.
 
 ---
 
 ### Atom 1.2.4 — Truthy/falsy — the exact list of 8
 
-**Mental model of this atom:** truthiness is a property of a value in a **boolean slot** (`if`, `&&`, `?`, `!!`). JS has exactly 8 falsy values — everything else is truthy:
+#### The Problem
+
+Truthiness is where "it works but is wrong" bugs hide, because the *data* never looks broken. Three real failures, all from one habit — using `if (value)` when you mean something more precise:
 
 ```js
-false; 0 / -0; ""; 0n; null; undefined; NaN; document.all; // the 8 (document.all = legacy IE footnote)
+// FAILURE 1 — valid-but-falsy counts as missing
+renderCount(0); // with: if (count) → prints "No items". 0 IS a count.
+
+// FAILURE 2 — you guard against the wrong emptiness
+const userNames = [];
+if (userNames) render(userNames);        // array is ALWAYS truthy → renders empty UI, no error
+
+// FAILURE 3 — React renders the guard value itself
+{count && <Badge count={count} />}       // count = 0 → React renders a naked 0 on screen
 ```
 
-And the counterintuitive pair to memorize so they're never separated again: **`""` is falsy, but `[]` and `{}` are ALWAYS truthy** — objects never make the falsy list (tag reasoning from Atom 1.2.1). Also `"0"` is truthy — only the empty *string* is falsy.
+The scary part: FAILURE 2 produces an *empty*, not-more-broken, UI. No exception. Nobody files a bug — they just see a blank card. This is why the "exact list" matters: you can't diagnose a `0`-swallowed-as-missing bug without knowing the falsy roster cold.
 
-The bug the syllabus names by hand — `if (count)`:
+#### The Mental Model
+
+> Truthiness is not about importance, presence, or "having data" — it's one narrow question: **what does this value become when it's pushed through a boolean slot?** Boolean slots are `if (…)`, `&&`, `||`, `!`, ternaries. The conversion has a tiny fixed guest list: **8 values** come out `false` — `false`, `0`/`-0`, `NaN`, `0n`, `""`, `null`, `undefined`, `document.all` — and *everything else* comes out `true`. Crucially, one whole tag never even applies: objects (including empty-ish things like `[]` and `{}`) are structurally outside the guest list. Shoot: don't ask "does my data exist" — ask "which of those 8 is my value, or is it none of them?"
+
+**One-liner:** *8 values are falsy, in a boolean slot; every object — even `[]` and `{}` — is truthy, every time.*
+
+#### The Explanation — memorize the list as a structural statement
+
+```text
+THE 8 FALSY VALUES, by tag:
+  boolean   → false
+  number    → 0, -0, NaN          (2 of 3 are the same "zero family"; NaN is defined-invalid)
+  bigint    → 0n
+  string    → "" ONLY             (even " " and "0" are truthy!)
+  object    → NEVER falsy         ([], {}, function(){} — all truthy)
+  null      → always falsy
+  undefined → always falsy
+  document.all → falsy (a legacy IE relic — even typeof document.all === "undefined")
+```
+
+Recite these three facts instead of trying to list unordered: *`""` is the only falsy string; null/undefined are always falsy; objects are never falsy.* That covers all 8 between them.
+
+**Now the debugging side — an if-behaves-wrongly procedure, 3 steps:**
+
+```text
+STEP 1 — What IS the value? console.log it with its tag:
+         console.log(value, typeof value)
+         This kills 90% of confusion — the surprise is usually: you assumed number,
+         it's a string ("0" is TRUTHY — only "" is falsy among strings).
+
+STEP 2 — Does the value sit on the falsy list?
+         If YES → your if/&&/! branch took the false path, and it's NOT a bug —
+         but decide: is that path correct for THIS value? (0 is a real count!)
+
+STEP 3 — Rewrite the condition to state your actual INTENT, not truthiness:
+         "is it missing?"            → x == null            (null or undefined only)
+         "is it an empty string?"    → x === ""
+         "is it zero?"               → x === 0
+         "are there items?"          → x.length > 0         (arrays)
+         "does it have any keys?"    → Object.keys(x).length > 0
+         "does the property exist?"  → 'id' in obj  (or  obj?.id != null)
+```
+
+The single move of STEP 3: **stop testing what the value converts to; test what the value is.** Every bug in the failure list at the top is from testing conversion instead of meaning.
+
+Practice by re-fixing the three failures:
 
 ```js
-// Broken: treats "falsy" as "absent"
-function renderCount(count) {
-  if (count) return `${count} items`;
-  return "No items";
-}
-renderCount(0); // "No items" — count EXISTS, its value is literally 0!
+// Fix 1 — 0 is a real count; null/undefined mean missing:
+if (count != null) return `${count} items`;
+// (== null deliberately — Atom 1.2.3 notes why this is the ONE idiomatic ==)
+
+// Fix 2 — arrays never fail the if, so you can't guard via truthiness — test emptiness:
+if (userNames.length > 0) render(userNames);
+
+// Fix 3 — React: && returns the falsy operand itself; 0 escapes the guard and renders
+{count > 0 && <Badge count={count} />}          // boolean-only guard
+{count ? <Badge count={count} /> : null}        // ternary — anything falsy-unwanted renders null
 ```
 
-The fix isn't `count === undefined` shell-games — it's *naming what "missing" means*:
+Why Fix 3 works: `&&`/`||` don't return booleans — they return **the last operand evaluated** (from Atom 1.2.2's "return the operands" list). `0 && anything` evaluates to `0`, React receives the number 0, and React renders any value that isn't `false`/`null`/`undefined`. So the fix has two styles: make the guard produce a boolean (`count > 0`) or make the fallback produce nothing visible (`count ? … : null`).
 
-```js
-function renderCountFixed(count) {
-  if (count != null) {        // the "no value" idiom from Atom 1.2.3 — 0 is a real value here
-    return `${count} items`;
-  }
-  return "No items";
-}
-```
+#### The Gotchas
 
-Re-derivable truthiness table:
+- **`""` falsy, `"0"` truthy, `[]` truthy** — the exact trio that trips people who memorize the list *unordered* instead of learning the tag rule: strings only go falsy when *empty*; objects never go falsy at all.
+- **`if (arr)` succeeds even for an empty array** — the array itself is the truthy thing, not its contents. If you meant "has items", write `arr.length > 0`.
+- **`document.all` is the 8th falsy value and `typeof document.all === "undefined"`** — IE-era relic. Ignore it in practice, but knowing it beats confidently saying "six falsy values" in an interview.
+- **`if (x)` never checks whether "x is good data"** — it only asks which of the 8 slot-values `x` converts to. A missing variable (`undefined`) and an empty container (`[]`) take opposite paths purely because of their tags, not their contents.
+- **A `0 && guard` slipped into JSX is one of the highest-frequency React bugs** — it passes code review, because the bug renders where nobody looks: DOM text `0`, invisible in dev but a live bug once data has zeros. Prefer boolean-only operands or ternaries in JSX guards everywhere.
 
-| Tag | Falsy only when |
-|---|---|
-| `number` | `0`, `-0`, `NaN` |
-| `bigint` | `0n` |
-| `string` | `""` only |
-| `boolean` | `false` |
-| `object` | **never** (`[]`, `{}` truthy; legacy exception `document.all`) |
-| `null`/`undefined` | **always** |
+#### Interview-Shaped Questions
 
-**The React rendering version of the same bug:**
+1. **"Name every falsy value."**
+   `false` (boolean), `0`/`-0`, `NaN` (number), `0n` (bigint), `""` (string), `null`, `undefined`, and the legacy `document.all`. Everything else is truthy — including all objects, even empty `[]` and `{}`.
 
-```jsx
-// Broken: renders a naked 0 on screen
-{itemCount && <Counter items={itemCount} />}
-// itemCount = 0 → `0 && ...` returns 0 → React renders the number 0
+2. **"Why can't `if (userNames)` guard an array?"**
+   Arrays are objects and objects are never falsy — empty or not. The guard tests the *array reference's truthiness*, which is always true. Guard contents instead: `userNames.length > 0` — test emptiness, not truthiness.
 
-// Fixed: boolean-only expression, or ternary
-{itemCount > 0 && <Counter items={itemCount} />}
-{itemCount ? <Counter items={itemCount} /> : null}
-```
+3. **"Why does `{count && <Badge />}` render a 0 in the DOM when count is 0?"**
+   `&&` returns the last operand evaluated — `0` escapes the short-circuit as the number 0, and React renders any value that isn't `false`/`null`/`undefined`. Fix by making the guard boolean-only (`count > 0 && …`) or using a ternary with explicit `: null`.
 
-Why: `&&`/`||` **return the operands, not booleans** — the falsy side's value escapes the short-circuit, and React renders anything that isn't `false`/`null`/`undefined`.
+4. **"`if (count)` broke in production. Walk me through your debugging."**
+   Log `typeof count` first — most surprises are type surprises (`"0"` string vs `0` number). Check the falsy list to confirm what the branch actually did. Then rewrite the condition to state intent: `count != null` to test presence, `count === 0` to specifically mean zero — never test truthiness when you mean a value.
 
 ---
 
@@ -301,20 +513,9 @@ Why: `&&`/`||` **return the operands, not booleans** — the falsy side's value 
 - **Reassignment vs mutation through a parameter** — `fn(x)` can never change your variable `x`, but can always change `x`'s *contents*. `arr.sort()` mutates in place as a side effect (Atom 1.5.6 list).
 - **Primitive property writes silently vanish** — `"hello".foo = "bar"` does nothing (sloppy) or throws TypeError (strict); the temporary wrapper is gone before you can read it.
 
-**From Atom 1.2.3:**
+**For atoms 1.2.3 and 1.2.4:** the gotchas live inside each atom's section (post-rewrite) — no global duplicates here.
 
-- **`NaN == NaN` is false** — NaN is *defined* to be inequal to everything including itself; the only value where `x === x` is false (math reason lands in Atom 1.2.6).
-- **`null == 0` false but `null >= 0` true** — relational operators run a number-only algorithm (null → 0); coercive equality treats null as a special value. Worth writing a test for once, just to believe it.
-- **`"true" == true` is false** — boolean→number conversion happens FIRST, so it becomes `NaN == 1`. Never trust remembered `==` outcomes; recall the step order instead.
-- **Truthiness ≠ equality** — `!![]` is `true`, and `[] == false` is also `true`. Two different conversion paths, no contradiction — but never let one intuition leak into the other.
-- **`[] == ""` is true, `[] == []` is false** — the first is `ToPrimitive` + `"" → 0`; the second is address comparison from 1.2.2.
-
-**From Atom 1.2.4:**
-
-- **`[]` and `{}` are truthy even though `""` isn't** — objects never make the falsy list. `if (arr)` succeeds even for an empty array; use `arr.length > 0` when you mean "has items".
-- **`document.all` is the 8th falsy value** — an ancient IE relic (it even reports `typeof === "undefined"`). Ignore it in daily work, but knowing "7 real + 1 legacy footnote" beats anyone who confidently says "six falsy values".
-- **`"0"` the string is truthy** — only `""` is falsy among strings. Yes, that's why `if (requestStatus)` behaves differently from `if (Number(requestStatus))`.
-- **`&&`/`||` return the OPERANDS, not booleans** — `0 || "fallback"` → `"fallback"`; this is the mechanism behind the React 0-render bug and the `??` design (Atom 1.2.5).
+**The one capstone gotcha that spans all four atoms:** everything in this unit is the *tag* deciding behavior. `typeof` reads tags (1.2.1); tags decide copy-vs-share (1.2.2); tags decide whether `==` needs conversion (1.2.3); tags decide the falsy list (1.2.4). When any type behavior surprises you, ask "What is the *tag* here?" — before guessing about the value.
 
 ---
 
@@ -343,21 +544,7 @@ Why: `&&`/`||` **return the operands, not booleans** — the falsy side's value 
 7. **"Two users fetched from the API have identical fields — why does `user1 === user2` fail?"**
    Object equality is address/identity comparison, never contents. Options: field-by-field, `JSON.stringify` (caveats: key order, `undefined`, functions, circular refs), or holding one canonical shared reference.
 
-*From Atom 1.2.3:*
-
-8. **"What does `==` actually do vs `===`?"**
-   Same tags → identical behavior. Different tags → spec-defined coercion (string→number, boolean→number first, object→primitive via `ToPrimitive`). `===` compares tags and rejects mismatch with no conversion. Use `===` everywhere except the deliberate `x == null` nullable idiom.
-
-9. **"Why is `null >= 0` true but `null == 0` false?"**
-   Relational operators run a number-only algorithm — null converts to 0, so `0 >= 0` is true. Coercive equality treats null as unique and only ever pairs it with `undefined`. Two algorithms, one value — this is the answer that separates memorizers from spec-readers.
-
-*From Atom 1.2.4:*
-
-10. **"Name every falsy value — and why does `if (count)` break?"**
-    `false`, `0`/`-0`, `NaN`, `0n`, `""`, `null`, `undefined`, `document.all`. `if` coerces to truthiness, so a real-but-zero `count` short-circuits. The fix is naming what "missing" means — `count != null` (present) vs `count == null` (absent).
-
-11. **"Why does `{itemCount && <Component />}` render a 0 on screen?"**
-    `&&` returns its operands, not booleans — `0` escapes the short-circuit, and React renders any value except `false`/`null`/`undefined`. Fix: boolean-only guards (`itemCount > 0 && ...`) or ternaries.
+*From atoms 1.2.3 and 1.2.4 (post-rewrite): full interview Q&As live inside each atom's section — equality solver's checklist, `null >= 0` vs `null == 0`, the falsy roster, and the debugging walkthroughs for `if (count)` and JSX 0-render bugs.*
 
 ---
 
